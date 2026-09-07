@@ -1,0 +1,11 @@
+node_modules/
+*.ts
+*.tsbuildinfo
+!.gitignore
+!index.js
+!package.json
+!package-lock.json
+!src/
+!src/**
+baileys_auth_info/
+.env
