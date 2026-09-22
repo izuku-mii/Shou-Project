@@ -199,13 +199,58 @@ function getUser(m) {
     return user;
 }
 
-function getChat(m) {
+/*
+ * GET CHAT (ROBUST)
+ *
+ * FIX BANCHAT:
+ *
+ * Sebelumnya getChat() cuma baca
+ * global.db.data.chats[m.chat] secara
+ * exact-match key. Kalau plugin lain
+ * (mis. plugin .banchat) menyimpan
+ * status ban pakai variasi JID yang
+ * sedikit beda (misal ada suffix
+ * device ":8", sudah/belum di-decode,
+ * dsb), maka key-nya beda dan
+ * chat.banned yang dibaca di sini
+ * selalu balik ke objek baru/kosong
+ * (banned: undefined) walau di DB
+ * sebenarnya ada entry lain yang
+ * sudah true.
+ *
+ * Sekarang getChat() akan:
+ * 1. Coba exact match dulu (paling cepat).
+ * 2. Kalau belum ada, cari key lain
+ *    di global.db.data.chats yang
+ *    "sama" secara JID/nomor
+ *    (pakai sameJid), lalu PAKAI
+ *    objek itu (bukan bikin baru),
+ *    supaya status banned yang sudah
+ *    di-set plugin lain tetap kebaca.
+ * 3. Kalau memang belum ada sama sekali,
+ *    baru bikin entry baru di key
+ *    m.chat.
+ */
+function getChat(m, conn) {
     if (!m?.chat) return {};
 
     global.db.data.chats ??= {};
-    global.db.data.chats[m.chat] ??= {};
 
-    return global.db.data.chats[m.chat];
+    const chats = global.db.data.chats;
+
+    if (chats[m.chat]) {
+        return chats[m.chat];
+    }
+
+    for (const key of Object.keys(chats)) {
+        if (sameJid(conn, key, m.chat)) {
+            return chats[key];
+        }
+    }
+
+    chats[m.chat] = {};
+
+    return chats[m.chat];
 }
 
 function getBotJid(conn) {
@@ -768,7 +813,7 @@ class CommandHandler {
                 }
 
                 const user = getUser(m);
-                const chat = getChat(m);
+                const chat = getChat(m, sock);
 
                 const isROwner =
                     isOwner(m.sender);
