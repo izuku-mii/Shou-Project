@@ -631,8 +631,8 @@ async function createConnection() {
             false,
 
         browser:
-            Browsers.macOS(
-                'Safari'
+            Browsers.ubuntu(
+                'Edge'
             ),
 
         logger,
