@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeFile, unlink, readFile } from "fs/promises";
 import { randomBytes } from "crypto";
-import { downloadMediaMessage } from "baileys";
+import { downloadMediaMessage } from "../../zapo/shim.js";
 cmd.add({
     name: "tovn",
     alias: ["tovoice", "tomp3vn"],
@@ -21,7 +21,7 @@ cmd.add({
         if (!m?.quoted?.isMedia || !/audio|video/.test(mime))
             return m.reply("File yang dibalas bukan audio/video.");
         try {
-            const buffer = await downloadMediaMessage(m?.quoted, "buffer", {}, { reuploadRequest: sock.waUploadToServer, logger: sock.logger || console });
+            const buffer = await downloadMediaMessage(m?.quoted, "buffer", {}, { reuploadRequest: sock.waUploadToServer, logger: console });
             const tempInput = join(tmpdir(), randomBytes(6).toString("hex") + getExtension(mime));
             const tempOutput = join(tmpdir(), randomBytes(6).toString("hex") + ".ogg");
             await writeFile(tempInput, buffer);

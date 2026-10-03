@@ -118,6 +118,11 @@ function spawn() {
             return;
         }
 
+        if (msg.type === 'log') {
+            console.log('ℹ️', msg.text);
+            return;
+        }
+
         if (msg.type === 'pairing-code') {
             console.log(`🔑 Pairing Code: ${msg.code}`);
             return;

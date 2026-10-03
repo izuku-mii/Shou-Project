@@ -17,7 +17,7 @@ import {
     toAudio
 } from './converter.js'
 
-import MakeWASocket, {
+import {
     proto,
     delay,
     downloadContentFromMessage,
@@ -28,12 +28,12 @@ import MakeWASocket, {
     getBinaryNodeChild,
     WAMessageStubType,
     prepareWAMessageMedia
-} from 'baileys'
+} from '../zapo/shim.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default async function makeWASocket(connectionOptions, options = {}) {
-    const conn = MakeWASocket(connectionOptions)
+    const conn = connectionOptions // WaClient zapo yang sudah di-wrap (compat.js)
     
     Object.defineProperty(conn, 'decodeJid', {
         value(jid) {
@@ -98,7 +98,495 @@ export default async function makeWASocket(connectionOptions, options = {}) {
         return conn.decodeJid(jid)
     }
 
-    conn.logger = function (...args) {
+conn.fakeMesaage = async function (jid, options = {}) {
+   try {
+      let targetObj = options.id || options.target || options.msg || options.quoted
+      let targetId = null
+
+      if (typeof targetObj === 'string') {
+         if (
+            targetObj.endsWith('@s.whatsapp.net') ||
+            targetObj.endsWith('@lid') ||
+            /^\d+$/.test(targetObj)
+         ) {
+            if (/^\d+$/.test(targetObj)) {
+               targetObj = `${targetObj}@s.whatsapp.net`
+            }
+
+            const storeInstance = conn.store || stores?.default || stores
+            let messages = []
+
+            if (typeof conn.loadMessages === 'function') {
+               messages = await conn.loadMessages(jid, 100) || []
+            } else if (
+               storeInstance &&
+               typeof storeInstance.loadMessages === 'function'
+            ) {
+               messages = await storeInstance.loadMessages(jid, 100) || []
+            } else if (
+               storeInstance &&
+               typeof storeInstance.readJidData === 'function'
+            ) {
+               messages = storeInstance.readJidData(jid) || []
+            }
+
+            if (!Array.isArray(messages) || !messages.length) {
+               messages = Object.values(
+                  conn.store?.messages || {}
+               ).flat()
+            }
+
+            if (!Array.isArray(messages)) messages = []
+
+            const targetDecoded = conn.decodeJid
+               ? conn.decodeJid(targetObj)
+               : targetObj.replace(/:.+@/, '@')
+
+            const targetDigits = targetObj.replace(/\D/g, '')
+
+            const targetMatchSet = new Set([
+               targetObj,
+               targetDecoded,
+               targetDecoded.replace(/:.+@/, '@')
+            ])
+
+            if (jid.endsWith('@g.us')) {
+               const groupMeta = await (
+                  conn.resolveGroupMetadata
+                     ? conn.resolveGroupMetadata(jid)
+                     : conn.groupMetadata(jid)
+               ).catch(() => ({}))
+
+               if (groupMeta?.participants) {
+                  const found = groupMeta.participants.find(p => {
+                     const pId = p?.id
+                        ? conn.decodeJid
+                           ? conn.decodeJid(p.id)
+                           : p.id.replace(/:.+@/, '@')
+                        : ''
+
+                     const pLid = p?.lid
+                        ? conn.decodeJid
+                           ? conn.decodeJid(p.lid)
+                           : p.lid.replace(/:.+@/, '@')
+                        : ''
+
+                     const phone = p?.phoneNumber
+                        ? String(p.phoneNumber).replace(/\D/g, '')
+                        : ''
+
+                     return (
+                        pId === targetDecoded ||
+                        pLid === targetDecoded ||
+                        (
+                           targetDigits &&
+                           (
+                              pId.replace(/\D/g, '') === targetDigits ||
+                              pLid.replace(/\D/g, '') === targetDigits ||
+                              phone === targetDigits
+                           )
+                        )
+                     )
+                  })
+
+                  if (found) {
+                     if (found.id) {
+                        targetMatchSet.add(found.id)
+                        if (conn.decodeJid) {
+                           targetMatchSet.add(conn.decodeJid(found.id))
+                        }
+                     }
+
+                     if (found.lid) {
+                        targetMatchSet.add(found.lid)
+                        if (conn.decodeJid) {
+                           targetMatchSet.add(conn.decodeJid(found.lid))
+                        }
+                     }
+
+                     if (found.phoneNumber) {
+                        const phone = String(found.phoneNumber)
+                           .replace(/\D/g, '')
+
+                        if (phone) {
+                           targetMatchSet.add(
+                              `${phone}@s.whatsapp.net`
+                           )
+                        }
+                     }
+                  }
+               }
+            }
+
+            if (global.db?.users) {
+               const dbUsers = Array.isArray(global.db.users)
+                  ? global.db.users
+                  : (
+                     typeof global.db.users.values === 'function'
+                        ? Array.from(global.db.users.values())
+                        : []
+                  )
+
+               const foundUser = dbUsers.find(u => {
+                  const uJid = u?.jid
+                     ? conn.decodeJid
+                        ? conn.decodeJid(u.jid)
+                        : u.jid
+                     : ''
+
+                  const uLid = u?.lid
+                     ? conn.decodeJid
+                        ? conn.decodeJid(u.lid)
+                        : u.lid
+                     : ''
+
+                  return (
+                     uJid === targetDecoded ||
+                     uLid === targetDecoded ||
+                     (
+                        targetDigits &&
+                        (
+                           uJid.replace(/\D/g, '') === targetDigits ||
+                           uLid.replace(/\D/g, '') === targetDigits
+                        )
+                     )
+                  )
+               })
+
+               if (foundUser) {
+                  if (foundUser.jid) {
+                     targetMatchSet.add(foundUser.jid)
+                     if (conn.decodeJid) {
+                        targetMatchSet.add(
+                           conn.decodeJid(foundUser.jid)
+                        )
+                     }
+                  }
+
+                  if (foundUser.lid) {
+                     targetMatchSet.add(foundUser.lid)
+                     if (conn.decodeJid) {
+                        targetMatchSet.add(
+                           conn.decodeJid(foundUser.lid)
+                        )
+                     }
+                  }
+               }
+            }
+
+            const targetMsg = messages
+               .filter(v => {
+                  if (!v?.key) return false
+
+                  const participants = [
+                     v.key.participant,
+                     v.key.participantAlt,
+                     v.participant,
+                     v.sender
+                  ].filter(Boolean)
+
+                  return participants.some(value => {
+                     const raw = String(value)
+
+                     const decoded = conn.decodeJid
+                        ? conn.decodeJid(raw)
+                        : raw.replace(/:.+@/, '@')
+
+                     const clean = decoded.replace(/:.+@/, '@')
+                     const digits = clean.replace(/\D/g, '')
+
+                     return (
+                        targetMatchSet.has(raw) ||
+                        targetMatchSet.has(decoded) ||
+                        targetMatchSet.has(clean) ||
+                        (
+                           targetDigits &&
+                           digits === targetDigits
+                        )
+                     )
+                  })
+               })
+               .sort(
+                  (a, b) =>
+                     Number(b?.messageTimestamp || 0) -
+                     Number(a?.messageTimestamp || 0)
+               )[0]
+
+            if (!targetMsg) {
+               throw new Error(
+                  `Could not find recent message from specified target user ${targetObj} in store.`
+               )
+            }
+
+            targetId = targetMsg.key?.id
+            targetObj = targetMsg
+         } else {
+            targetId = targetObj
+         }
+      } else if (targetObj && typeof targetObj === 'object') {
+         targetId =
+            targetObj.id ||
+            targetObj.key?.id ||
+            targetObj.fakeObj?.key?.id
+      }
+
+      if (!targetId) {
+         throw new Error(
+            'Target message ID or user target is required for sendFakeMsg (e.g. { id: target }).'
+         )
+      }
+
+      const resolveBuffer = async (input) => {
+         if (!input) return null
+
+         if (Buffer.isBuffer(input)) return input
+
+         if (typeof input === 'string') {
+            if (
+               Utils &&
+               typeof Utils.fetchAsBuffer === 'function'
+            ) {
+               return await Utils.fetchAsBuffer(input)
+                  .catch(() => null)
+            }
+
+            return null
+         }
+
+         if (typeof input === 'object' && input.url) {
+            const urlStr = input.url
+
+            if (Buffer.isBuffer(urlStr)) return urlStr
+
+            if (
+               Utils &&
+               typeof Utils.fetchAsBuffer === 'function'
+            ) {
+               return await Utils.fetchAsBuffer(urlStr)
+                  .catch(() => null)
+            }
+
+            return null
+         }
+
+         return null
+      }
+
+      const msgObj =
+         options.message &&
+         typeof options.message === 'object'
+            ? options.message
+            : options
+
+      let mediaType = null
+      let mediaBuffer = null
+
+      if (msgObj.image || options.image) {
+         mediaType = 'image'
+         mediaBuffer = await resolveBuffer(
+            msgObj.image || options.image
+         )
+      } else if (msgObj.video || options.video) {
+         mediaType = 'video'
+         mediaBuffer = await resolveBuffer(
+            msgObj.video || options.video
+         )
+      } else if (msgObj.document || options.document) {
+         mediaType = 'document'
+         mediaBuffer = await resolveBuffer(
+            msgObj.document || options.document
+         )
+      } else if (msgObj.audio || options.audio) {
+         mediaType = 'audio'
+         mediaBuffer = await resolveBuffer(
+            msgObj.audio || options.audio
+         )
+      } else if (msgObj.sticker || options.sticker) {
+         mediaType = 'sticker'
+         mediaBuffer = await resolveBuffer(
+            msgObj.sticker || options.sticker
+         )
+      } else if (
+         targetObj &&
+         typeof targetObj.download === 'function'
+      ) {
+         const rawType = (targetObj.mtype || '')
+            .replace('Message', '')
+
+         if (
+            ['image', 'video', 'document', 'audio', 'sticker']
+               .includes(rawType)
+         ) {
+            mediaType = rawType
+            mediaBuffer = await targetObj
+               .download()
+               .catch(() => null)
+         }
+      }
+
+      const contentText =
+         msgObj.text ||
+         msgObj.caption ||
+         options.text ||
+         options.caption ||
+         ''
+
+      const mentionedJids = [
+         ...new Set(
+            options.mentions ||
+            options.mentionedJid ||
+            msgObj.mentions ||
+            msgObj.mentionedJid ||
+            []
+         )
+      ]
+
+      const isMedia = Boolean(
+         mediaType && mediaBuffer
+      )
+
+      let placeholderMsg = {}
+      let editedMsg = {}
+
+      if (isMedia) {
+         placeholderMsg = await generateWAMessageContent(
+            {
+               [mediaType]: mediaBuffer,
+               caption: ''
+            },
+            {
+               upload: conn.waUploadToServer
+            }
+         )
+
+         editedMsg = await generateWAMessageContent(
+            {
+               [mediaType]: mediaBuffer,
+               caption: contentText
+            },
+            {
+               upload: conn.waUploadToServer
+            }
+         )
+
+         const pKey =
+            Object.keys(placeholderMsg)[0]
+
+         const eKey =
+            Object.keys(editedMsg)[0]
+
+         if (placeholderMsg[pKey]) {
+            placeholderMsg[pKey].contextInfo = {
+               isGroupStatus: true
+            }
+         }
+
+         if (editedMsg[eKey]) {
+            editedMsg[eKey].contextInfo = {
+               isGroupStatus: false,
+               ...(mentionedJids.length > 0
+                  ? {
+                     mentionedJid: mentionedJids
+                  }
+                  : {})
+            }
+         }
+      } else {
+         placeholderMsg = {
+            extendedTextMessage: {
+               text: '',
+               contextInfo: {
+                  isGroupStatus: true
+               }
+            }
+         }
+
+         editedMsg = {
+            extendedTextMessage: {
+               text: contentText,
+               contextInfo: {
+                  isGroupStatus: false,
+                  ...(mentionedJids.length > 0
+                     ? {
+                        mentionedJid: mentionedJids
+                     }
+                     : {})
+               }
+            }
+         }
+      }
+
+      const tempId = await conn.relayMessage(
+         jid,
+         placeholderMsg,
+         {}
+      )
+
+      const targetKeyId =
+         typeof tempId === 'string'
+            ? tempId
+            : tempId?.key?.id
+
+      const tempId2 = await conn.relayMessage(
+         jid,
+         {
+            protocolMessage: {
+               key: {
+                  remoteJid: jid,
+                  fromMe: true,
+                  id: targetKeyId
+               },
+               type: 14,
+               editedMessage: editedMsg
+            }
+         },
+         {
+            messageId: targetId
+         }
+      )
+
+      if (options.delay !== false) {
+         const delayMs =
+            typeof options.delay === 'number'
+               ? options.delay
+               : 200
+
+         await new Promise(res =>
+            setTimeout(res, delayMs)
+         )
+      }
+
+      await Promise.allSettled([
+         conn.sendMessage(jid, {
+            delete: {
+               remoteJid: jid,
+               id: targetKeyId,
+               fromMe: true
+            }
+         }),
+
+         conn.sendMessage(jid, {
+            delete: {
+               remoteJid: jid,
+               id: tempId2,
+               fromMe: true
+            }
+         })
+      ])
+
+      return {
+         status: true,
+         targetId,
+         tempId: targetKeyId,
+         tempId2
+      }
+   } catch (e) {
+      throw e
+   }
+}
+  
+    // JANGAN pakai nama `logger`: WaClient zapo memakai this.logger.error/warn/info internal
+    conn.log = function (...args) {
         console.log(
             chalk.cyan('[CONN]'),
             ...args

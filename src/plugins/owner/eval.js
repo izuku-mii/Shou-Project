@@ -206,7 +206,7 @@ cmd.add({
   desc: "Execute JavaScript",
   isOwner: true,
 
-  async run({ m, sock, isOwner }) {
+  async run({ m, sock, isOwner, isBotAdmin, participants }) {
     const text = m.text
       .trim()
       .split(" ")
@@ -228,7 +228,9 @@ main()`
     const context = {
       sock,
       m,
-      isOwner
+      isOwner,
+      isBotAdmin,
+      participants
     };
 
     const result = await executeCode(

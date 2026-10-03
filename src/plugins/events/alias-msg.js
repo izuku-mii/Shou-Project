@@ -6,7 +6,7 @@ cmd.add({
             generateWAMessage,
             areJidsSameUser,
             proto
-        } = await import("baileys");
+        } = await import("../../zapo/shim.js");
 
         conn.alias ??= {};
         conn.input ??= {};

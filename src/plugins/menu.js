@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import {
     prepareWAMessageMedia,
     generateWAMessageFromContent
-} from 'baileys'
+} from '../zapo/shim.js'
 
 import cmd from '../commands/map.js'
 

@@ -7,7 +7,7 @@ import zlib from 'node:zlib'
 import JSZip from 'jszip'
 import {
     generateWAMessageFromContent
-} from 'baileys'
+} from '../zapo/shim.js'
 
 function toBuffer(value) {
     if (Buffer.isBuffer(value)) return value

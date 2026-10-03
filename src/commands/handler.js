@@ -2,6 +2,7 @@ import cmd from "./map.js";
 import chalk from "chalk";
 import { watchFile, unwatchFile } from "fs";
 import { fileURLToPath } from "url";
+import { isOwnerMsg } from "../utils/identity.js";
 
 const LIMIT_MAX = 30;
 
@@ -816,6 +817,7 @@ class CommandHandler {
                 const chat = getChat(m, sock);
 
                 const isROwner =
+                    isOwnerMsg(m, sock) ||
                     isOwner(m.sender);
 
                 const isOwnerUser =

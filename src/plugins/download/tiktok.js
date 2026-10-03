@@ -3,6 +3,7 @@ import path from "path";
 import { spawn } from "child_process";
 import tt from "../../scrape/tiktok.js";
 import cmd from "../../commands/map.js";
+import axios from "axios"
 
 function run(command, args = []) {
     return new Promise((resolve, reject) => {
@@ -88,10 +89,29 @@ cmd.add({
         }
 
         try {
+            let url = text;
+
+            // Khusus vt.tiktok.com ambil URL asli dari Location
+            if (/^https?:\/\/vt\.tiktok\.com\//i.test(text)) {
+                const res = await axios.get(text, {
+                    maxRedirects: 0,
+                    validateStatus: status =>
+                        status >= 300 && status < 400
+                });
+
+                url = res.headers.location;
+
+                if (!url) {
+                    throw new Error(
+                        "Location URL Tiktok tidak ditemukan"
+                    );
+                }
+            }
+
             const {
                 data: u,
                 client
-            } = await tt.scrapeTikTok(text);
+            } = await tt.scrapeTikTok(url);
 
             const r = `乂 *Tiktok Downloader*
 

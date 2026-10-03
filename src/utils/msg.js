@@ -5,7 +5,7 @@ import {
     jidNormalizedUser,
     getContentType,
     downloadContentFromMessage
-} from "baileys"
+} from "../zapo/shim.js"
 
 const MEDIA_TYPES = new Set([
     "imageMessage",
